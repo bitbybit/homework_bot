@@ -187,10 +187,11 @@ def main():
             homeworks = check_response(response)
             current_timestamp = int(time.time())
 
-            for homework in homeworks:
-                status = parse_status(homework)
+            if homeworks:
+                for homework in homeworks:
+                    status = parse_status(homework)
 
-                send_message(telegram_bot, status)
+                    send_message(telegram_bot, status)
 
         except Exception as error:
             message = f"Сбой в работе программы: {error}"
