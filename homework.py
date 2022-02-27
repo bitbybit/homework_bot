@@ -3,7 +3,7 @@ import os
 import sys
 import time
 from http import HTTPStatus
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import requests
 import telegram
@@ -13,9 +13,9 @@ from exceptions import ApiError
 
 load_dotenv()
 
-PRACTICUM_TOKEN: Optional[str] = os.getenv("PRACTICUM_TOKEN")
-TELEGRAM_TOKEN: Optional[str] = os.getenv("TELEGRAM_TOKEN")
-TELEGRAM_CHAT_ID: Optional[str] = os.getenv("TELEGRAM_CHAT_ID")
+PRACTICUM_TOKEN: str = os.getenv("PRACTICUM_TOKEN", default="")
+TELEGRAM_TOKEN: str = os.getenv("TELEGRAM_TOKEN", default="")
+TELEGRAM_CHAT_ID: str = os.getenv("TELEGRAM_CHAT_ID", default="")
 
 RETRY_TIME = 600
 ENDPOINT = "https://practicum.yandex.ru/api/user_api/homework_statuses/"
