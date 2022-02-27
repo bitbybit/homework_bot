@@ -2,6 +2,7 @@ import logging
 import os
 import sys
 import time
+from http import HTTPStatus
 from typing import Any, Dict, List, Optional
 
 import requests
@@ -68,12 +69,18 @@ def get_api_answer(current_timestamp: int) -> Dict:
 
     try:
         response = requests.get(url=ENDPOINT, params=params, headers=HEADERS)
-        response.raise_for_status()
-    except requests.exceptions.HTTPError as error:
-        raise ApiError(f"Эндпоинт {ENDPOINT} недоступен - {error}")
+
+        if response.status_code != HTTPStatus.OK:
+            raise ApiError(
+                f"Эндпоинт {ENDPOINT} недоступен. "
+                f"Код ответа API: {response.status_code}"
+            )
     except requests.exceptions.RequestException as error:
-        if not isinstance(requests.exceptions.HTTPError, str):
-            raise ApiError(f"Сбой запроса эндпоинта {ENDPOINT} - {error}")
+        error.args = (
+            f"Сбой запроса эндпоинта {ENDPOINT} - {error}",
+            *error.args,
+        )
+        raise
     else:
         return response.json()
 
@@ -88,16 +95,21 @@ def check_response(response: Dict) -> List[Dict]:
     доступный в ответе API по ключу `homeworks`.
     """
     try:
-        return response["homeworks"]
-    except KeyError:
-        message = "Не удалось получить работы из ответа API."
-        logger.error(message)
-        send_message(telegram_bot, message)
+        homeworks = response["homeworks"]
+    except KeyError as error:
+        error.args = (
+            "Не удалось получить работы из ответа API.",
+            *error.args,
+        )
+        raise
 
-        return []
+    if not isinstance(homeworks, list):
+        raise ApiError("Неверный формат ответа списка заданий API.")
+
+    return homeworks
 
 
-def parse_status(homework: Dict[str, Any]) -> Optional[str]:
+def parse_status(homework: Dict[str, Any]) -> str:
     """
     Извлекает из информации о конкретной домашней работе статус этой работы.
 
@@ -108,22 +120,30 @@ def parse_status(homework: Dict[str, Any]) -> Optional[str]:
     """
     try:
         homework_name = homework["homework_name"]
-        homework_status = homework["status"]
-    except KeyError:
-        message = f"Не удалось извлечь информацию из работы: {homework}"
-        logger.error(message)
-        send_message(telegram_bot, message)
+    except KeyError as error:
+        error.args = (
+            f"Не удалось извлечь название работы: {homework}",
+            *error.args,
+        )
+        raise
 
-        return None
+    try:
+        homework_status = homework["status"]
+    except KeyError as error:
+        error.args = (
+            f"Не удалось извлечь статус работы: {homework}",
+            *error.args,
+        )
+        raise
 
     try:
         verdict = HOMEWORK_STATUSES[homework_status]
-    except KeyError:
-        message = f"Непредвиденный статус работы: {homework_status}"
-        logger.error(message)
-        send_message(telegram_bot, message)
-
-        return None
+    except KeyError as error:
+        error.args = (
+            f"Непредвиденный статус работы: {homework_status}",
+            *error.args,
+        )
+        raise
 
     return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
@@ -170,8 +190,7 @@ def main():
             for homework in homeworks:
                 status = parse_status(homework)
 
-                if status:
-                    send_message(telegram_bot, status)
+                send_message(telegram_bot, status)
 
         except Exception as error:
             message = f"Сбой в работе программы: {error}"
