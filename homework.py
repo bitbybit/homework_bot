@@ -13,9 +13,13 @@ from exceptions import ApiError
 
 load_dotenv()
 
-PRACTICUM_TOKEN: str = os.getenv("PRACTICUM_TOKEN", default="")
-TELEGRAM_TOKEN: str = os.getenv("TELEGRAM_TOKEN", default="")
-TELEGRAM_CHAT_ID: str = os.getenv("TELEGRAM_CHAT_ID", default="")
+PRACTICUM_TOKEN: str = os.getenv(
+    "PRACTICUM_TOKEN", default="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+)
+TELEGRAM_TOKEN: str = os.getenv(
+    "TELEGRAM_TOKEN", default="1111111111:AAAAAAAAAAAAAAAAAAAAAAAAAAA-AAAAAAA"
+)
+TELEGRAM_CHAT_ID: str = os.getenv("TELEGRAM_CHAT_ID", default="11111111")
 
 RETRY_TIME = 600
 ENDPOINT = "https://practicum.yandex.ru/api/user_api/homework_statuses/"
