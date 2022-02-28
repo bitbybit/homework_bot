@@ -9,6 +9,7 @@ import requests
 import telegram
 from dotenv import load_dotenv
 
+import settings
 from exceptions import ApiError
 
 load_dotenv()
@@ -20,16 +21,6 @@ TELEGRAM_TOKEN: str = os.getenv(
     "TELEGRAM_TOKEN", default="1111111111:AAAAAAAAAAAAAAAAAAAAAAAAAAA-AAAAAAA"
 )
 TELEGRAM_CHAT_ID: str = os.getenv("TELEGRAM_CHAT_ID", default="11111111")
-
-RETRY_TIME = 600
-ENDPOINT = "https://practicum.yandex.ru/api/user_api/homework_statuses/"
-HEADERS = {"Authorization": f"OAuth {PRACTICUM_TOKEN}"}
-
-HOMEWORK_STATUSES = {
-    "approved": "Работа проверена: ревьюеру всё понравилось. Ура!",
-    "reviewing": "Работа взята на проверку ревьюером.",
-    "rejected": "Работа проверена: у ревьюера есть замечания.",
-}
 
 logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -72,21 +63,24 @@ def get_api_answer(current_timestamp: int) -> Dict:
     params = {"from_date": timestamp}
 
     try:
-        response = requests.get(url=ENDPOINT, params=params, headers=HEADERS)
+        response = requests.get(
+            url=settings.ENDPOINT,
+            params=params,
+            headers={"Authorization": f"OAuth {PRACTICUM_TOKEN}"},
+        )
 
         if response.status_code != HTTPStatus.OK:
             raise ApiError(
-                f"Эндпоинт {ENDPOINT} недоступен. "
+                f"Эндпоинт {settings.ENDPOINT} недоступен. "
                 f"Код ответа API: {response.status_code}"
             )
     except requests.exceptions.RequestException as error:
-        error.args = (
-            f"Сбой запроса эндпоинта {ENDPOINT} - {error}",
-            *error.args,
-        )
-        raise
+        raise ApiError(f"Сбой запроса эндпоинта {settings.ENDPOINT} - {error}")
     else:
-        return response.json()
+        try:
+            return response.json()
+        except ValueError:
+            raise ApiError("Ошибка в формате JSON.")
 
 
 def check_response(response: Dict) -> List[Dict]:
@@ -100,12 +94,8 @@ def check_response(response: Dict) -> List[Dict]:
     """
     try:
         homeworks = response["homeworks"]
-    except KeyError as error:
-        error.args = (
-            "Не удалось получить работы из ответа API.",
-            *error.args,
-        )
-        raise
+    except KeyError:
+        raise ApiError("Не удалось получить работы из ответа API.")
 
     if not isinstance(homeworks, list):
         raise ApiError("Неверный формат ответа списка заданий API.")
@@ -122,32 +112,16 @@ def parse_status(homework: Dict[str, Any]) -> str:
     В случае успеха, функция возвращает подготовленную для отправки в Telegram
     строку, содержащую один из вердиктов словаря HOMEWORK_STATUSES.
     """
-    try:
-        homework_name = homework["homework_name"]
-    except KeyError as error:
-        error.args = (
-            f"Не удалось извлечь название работы: {homework}",
-            *error.args,
-        )
-        raise
+    for key in settings.API_EXPECTED_KEYS:
+        if key not in homework:
+            raise KeyError(f"Отсутствует ключ {key} работы: {homework}")
 
     try:
-        homework_status = homework["status"]
-    except KeyError as error:
-        error.args = (
-            f"Не удалось извлечь статус работы: {homework}",
-            *error.args,
-        )
-        raise
+        verdict = settings.HOMEWORK_STATUSES[homework["status"]]
+    except KeyError:
+        raise KeyError(f"Непредвиденный статус работы: {homework['status']}")
 
-    try:
-        verdict = HOMEWORK_STATUSES[homework_status]
-    except KeyError as error:
-        error.args = (
-            f"Непредвиденный статус работы: {homework_status}",
-            *error.args,
-        )
-        raise
+    homework_name = homework["homework_name"]
 
     return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
@@ -159,11 +133,9 @@ def check_tokens() -> bool:
     Если отсутствует хотя бы одна переменная окружения — функция должна
     вернуть False, иначе — True.
     """
-    for env in [PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID]:
-        if not env:
-            return False
+    env_expected = [PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID]
 
-    return True
+    return all(env_expected)
 
 
 def main():
@@ -183,6 +155,7 @@ def main():
         logger.critical(
             "Отсутствует одна из обязательных переменных окружения."
         )
+
         raise RuntimeError
 
     while True:
@@ -191,11 +164,15 @@ def main():
             homeworks = check_response(response)
             current_timestamp = int(time.time())
 
-            if homeworks:
+            if len(homeworks) != 0:
                 for homework in homeworks:
                     status = parse_status(homework)
 
                     send_message(telegram_bot, status)
+            else:
+                logger.debug("В ответе API отсутствуют новые статусы заданий.")
+
+            logger.info("Отправлен запрос к API.")
 
         except Exception as error:
             message = f"Сбой в работе программы: {error}"
@@ -206,13 +183,7 @@ def main():
                 send_message(telegram_bot, message)
                 last_error_message = message
 
-        else:
-            logger.info("Отправлен запрос к API.")
-
-            if len(homeworks) == 0:
-                logger.debug("В ответе API отсутствуют новые статусы заданий.")
-
-        time.sleep(RETRY_TIME)
+        time.sleep(settings.RETRY_TIME)
 
 
 if __name__ == "__main__":
